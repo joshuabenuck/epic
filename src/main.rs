@@ -90,7 +90,10 @@ struct TxtManifest {
 
 #[derive(Serialize, Deserialize)]
 struct EpicGame {
-    name: String,
+    display_name: String,
+    install_location: String,
+    launch_executable: String,
+    image_url: Option<String>,
 }
 
 impl EpicGame {
@@ -107,7 +110,10 @@ impl EpicGame {
                     serde_json::from_str(&fs::read_to_string(path.join(filename)).unwrap())
                         .unwrap();
                 games.push(EpicGame {
-                    name: manifest.display_name,
+                    display_name: manifest.display_name,
+                    install_location: manifest.install_location,
+                    launch_executable: manifest.launch_executable,
+                    image_url: None,
                 });
                 // println!(
                 //     "{} {} {}",
@@ -154,19 +160,22 @@ impl EpicGames for Vec<EpicGame> {
 
     fn merge(&mut self, games: Vec<EpicGame>) {
         let mut existing: std::collections::HashSet<String> =
-            self.iter().map(|g| g.name.clone()).collect();
+            self.iter().map(|g| g.display_name.clone()).collect();
         for game in games {
             let mut found = false;
             for orig in &mut self.iter_mut() {
-                if &orig.name == &game.name {
+                // is display_name really the best key to use?
+                if &orig.display_name == &game.display_name {
                     // how to avoid the clone here?
-                    orig.name = game.name.clone();
+                    orig.display_name = game.display_name.clone();
+                    orig.install_location = game.install_location.clone();
+                    orig.launch_executable = game.launch_executable.clone();
                     found = true;
-                    existing.remove(&orig.name);
+                    existing.remove(&orig.display_name);
                 }
             }
             if !found {
-                println!("Adding: {}", &game.name);
+                println!("Adding: {}", &game.display_name);
                 self.push(game);
             }
         }
@@ -211,7 +220,7 @@ async fn main() -> Result<()> {
     }
     if matches.is_present("list") {
         for game in &games {
-            println!("{}", game.name);
+            println!("{}", game.display_name);
         }
     }
     games.save(&epic_home)?;
