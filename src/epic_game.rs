@@ -1,12 +1,10 @@
 use anyhow::Result;
-use clap::{App, Arg};
-use reqwest;
-use scraper::{Html, Selector};
+use clipboard_win::{formats, Clipboard};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs;
 use std::path;
-use url;
+use std::process::Command;
 
 // Computer\HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Epic Games\EpicGamesLauncher
 //   AppDataPath C:\ProgramData\Epic\EpicGamesLauncher\Data\
@@ -89,15 +87,15 @@ struct TxtManifest {
 }
 
 #[derive(Serialize, Deserialize)]
-struct EpicGame {
-    display_name: String,
-    install_location: String,
-    launch_executable: String,
-    image_url: Option<String>,
+pub struct EpicGame {
+    pub display_name: String,
+    pub install_location: String,
+    pub launch_executable: String,
+    pub image_url: Option<String>,
 }
 
 impl EpicGame {
-    fn from_manifests() -> Vec<EpicGame> {
+    pub fn from_manifests() -> Vec<EpicGame> {
         let path: std::path::PathBuf =
             "c:/programdata/epic/epicgameslauncher/data/manifests".into();
         let mut games = Vec::new();
@@ -138,17 +136,38 @@ impl EpicGame {
         games
     }
 
-    fn load(dir: &path::PathBuf) -> Result<Vec<EpicGame>> {
+    pub fn load(dir: &path::PathBuf) -> Result<Vec<EpicGame>> {
         let contents = fs::read_to_string(dir.join(EPIC_GAMES_JSON))?;
         let games = serde_json::from_str(&contents)?;
         Ok(games)
     }
 }
 
-static EPIC_GAMES_JSON: &str = "epic_games.json";
-trait EpicGames {
+pub static EPIC_GAMES_JSON: &str = "epic_games.json";
+
+pub trait EpicGames {
     fn save(&self, dir: &path::PathBuf) -> Result<()>;
     fn merge(&mut self, games: Vec<EpicGame>);
+    fn find_images(&mut self) -> Result<()>;
+}
+
+fn getline() -> Result<String> {
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+    Ok(line)
+}
+
+fn yes_or_no(prompt: String) -> Result<bool> {
+    let mut response = None;
+    while response == None {
+        println!("{}", &prompt);
+        response = match getline()?.trim() {
+            "yes" | "y" => Some(true),
+            "no" | "n" => Some(false),
+            _ => None,
+        }
+    }
+    Ok(response.unwrap())
 }
 
 impl EpicGames for Vec<EpicGame> {
@@ -183,46 +202,47 @@ impl EpicGames for Vec<EpicGame> {
             println!("Possibly removed: {}", game);
         }
     }
-}
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let matches = App::new("epic")
-        .arg(Arg::with_name("list").long("list"))
-        .arg(Arg::with_name("refresh").long("refresh"))
-        .get_matches();
-    let home = match dirs::home_dir() {
-        None => {
-            eprintln!("Unable to find home dir!");
-            std::process::exit(1);
-        }
-        Some(h) => {
-            if !h.exists() {
-                eprintln!("Home dir doesn't exist!");
-                std::process::exit(1);
+    fn find_images(&mut self) -> Result<()> {
+        for game in self.iter_mut() {
+            if game.image_url.is_none() {
+                let url = format!(
+                    "https://www.epicgames.com/store/en-US/browse?q={}",
+                    game.display_name
+                );
+                println!("url: {}", &url);
+                let mut browser = Command::new("cmd");
+                browser.args(&["/C", "start", "chrome", &url]);
+                println!("{:?}", browser);
+                browser.status()?;
+                loop {
+                    println!(
+                        "Find the image for \"{}\", options 'skip', 'copy':",
+                        &game.display_name
+                    );
+                    let mut line = getline()?;
+                    match line.trim() {
+                        "skip" | "s" => break,
+                        "copy" | "c" => {
+                            let mut paste_buffer = String::new();
+                            Clipboard::new().unwrap().get_string(&mut paste_buffer)?;
+                            let prompt = format!(
+                                "For \"{}\", use the image url \"{}\"?",
+                                &game.display_name, &paste_buffer
+                            );
+                            let yes = yes_or_no(prompt)?;
+                            if yes {
+                                game.image_url = Some(paste_buffer);
+                                break;
+                            }
+                        }
+                        _ => {
+                            println!("Unrecognized input!");
+                        }
+                    }
+                }
             }
-            h
         }
-    };
-    let epic_home = home.join(".epic");
-    if !epic_home.exists() {
-        std::fs::create_dir(&epic_home)?;
+        Ok(())
     }
-    let json_path = epic_home.join(EPIC_GAMES_JSON);
-    let mut games = if json_path.exists() {
-        EpicGame::load(&epic_home)?
-    } else {
-        Vec::new()
-    };
-    if !json_path.exists() || matches.is_present("refresh") {
-        let games_from_manifests = EpicGame::from_manifests();
-        games.merge(games_from_manifests);
-    }
-    if matches.is_present("list") {
-        for game in &games {
-            println!("{}", game.display_name);
-        }
-    }
-    games.save(&epic_home)?;
-    Ok(())
 }

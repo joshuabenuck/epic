@@ -6,6 +6,10 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+name = "epic"
+path = "src/lib.rs"
+
 [dependencies]
 serde_json = "1.0.56"
 serde = { version = "1.0.114", features = [ "derive" ] }
@@ -16,3 +20,4 @@ scraper = "0.12.0"
 dirs = "3.0.0"
 clap = "2.33.1"
 anyhow = "1.0.31"
+clipboard-win = "3.1.1"
