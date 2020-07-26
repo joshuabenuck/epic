@@ -1,9 +1,6 @@
 use anyhow::Result;
 use clap::{App, Arg};
 use epic::{EpicGame, EpicGames, EPIC_GAMES_JSON};
-use reqwest;
-use scraper::{Html, Selector};
-use url;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -40,7 +37,7 @@ async fn main() -> Result<()> {
         games.merge(games_from_manifests);
     }
     if matches.is_present("find-images") {
-        games.find_images();
+        games.find_images()?;
     }
     if matches.is_present("list") {
         for game in &games {

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clipboard_win::{formats, Clipboard};
+use clipboard_win::Clipboard;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs;
@@ -88,9 +88,11 @@ struct TxtManifest {
 
 #[derive(Serialize, Deserialize)]
 pub struct EpicGame {
+    static_entry: Option<bool>,
     pub display_name: String,
     pub install_location: String,
     pub launch_executable: String,
+    pub launch_command: Option<String>,
     pub image_url: Option<String>,
 }
 
@@ -107,10 +109,16 @@ impl EpicGame {
                 let manifest: TxtManifest =
                     serde_json::from_str(&fs::read_to_string(path.join(filename)).unwrap())
                         .unwrap();
+                let mut launch_command = None;
+                if manifest.launch_command != "" {
+                    launch_command = Some(manifest.launch_command);
+                }
                 games.push(EpicGame {
+                    static_entry: Some(false),
                     display_name: manifest.display_name,
                     install_location: manifest.install_location,
                     launch_executable: manifest.launch_executable,
+                    launch_command,
                     image_url: None,
                 });
                 // println!(
@@ -185,10 +193,14 @@ impl EpicGames for Vec<EpicGame> {
             for orig in &mut self.iter_mut() {
                 // is display_name really the best key to use?
                 if &orig.display_name == &game.display_name {
-                    // how to avoid the clone here?
-                    orig.display_name = game.display_name.clone();
-                    orig.install_location = game.install_location.clone();
-                    orig.launch_executable = game.launch_executable.clone();
+                    if !orig.static_entry.unwrap_or(false) {
+                        // how to avoid the clone here?
+                        orig.display_name = game.display_name.clone();
+                        orig.install_location = game.install_location.clone();
+                        orig.launch_executable = game.launch_executable.clone();
+                        orig.launch_command = game.launch_command.clone();
+                        orig.static_entry = game.static_entry;
+                    }
                     found = true;
                     existing.remove(&orig.display_name);
                 }
@@ -220,7 +232,7 @@ impl EpicGames for Vec<EpicGame> {
                         "Find the image for \"{}\", options 'skip', 'copy':",
                         &game.display_name
                     );
-                    let mut line = getline()?;
+                    let line = getline()?;
                     match line.trim() {
                         "skip" | "s" => break,
                         "copy" | "c" => {
